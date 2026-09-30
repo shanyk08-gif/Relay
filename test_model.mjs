@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {campaign,sample,setSource,setDraft,wordCount,markdown,validCampaign,FORMATS,stale,stamp} from './model.mjs';
+const c=sample();assert(validCampaign(c));assert.equal(Object.keys(c.drafts).length,7);assert(Object.values(c.drafts).every(d=>d.text.length>100&&!stale(c,d)));
+const oldSource=c.source,oldVideo=c.drafts.video.text;
+c.drafts.summary.reviewed=true;setSource(c,c.source);assert(c.drafts.summary.reviewed);
+setSource(c,'Bank unions defer a three-day strike after talks.');
+assert.equal(c.objective,'');assert(!c.drafts.summary.reviewed);assert(!c.sample);
+assert.equal(c.drafts.video.text,oldVideo);assert.equal(c.drafts.video.source,oldSource);
+assert(Object.values(c.drafts).every(d=>stale(c,d)));assert.throws(()=>markdown(c));assert.throws(()=>markdown(c,'video'));
+c.drafts.summary=stamp(c,{text:'The bank strike was deferred.',model:'test'});
+const output=markdown(c);assert(output.includes('bank strike was deferred'));assert(!output.includes(oldVideo));assert(!output.includes(oldSource));assert(output.includes('Excluded outdated/unlinked drafts'));assert(output.includes(c.source));
+c.drafts.summary.reviewed=true;setDraft(c,'Edited bank summary');assert(!c.drafts.summary.reviewed);assert(!stale(c,c.drafts.summary));
+c.tone='Urgent';assert(stale(c,c.drafts.summary));
+const fresh=campaign();fresh.source='Some source';setDraft(fresh,'A manual draft');assert(!stale(fresh,fresh.drafts.summary));
+assert(stale(fresh,{text:'Legacy text',reviewed:true}));
+assert.equal(wordCount(' a\n b '),2);assert.equal(wordCount('  '),0);assert(!validCampaign({}));assert(!validCampaign({...c,active:'toString'}));
+console.log('PASS: source replacement preserves history, clears objective, blocks stale exports, records per-draft sources, and detects direction changes and legacy drafts');

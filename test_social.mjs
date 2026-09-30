@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {campaign,stamp,socialDraft,setSource} from './model.mjs';
+const c=campaign();c.source='A source with supported claims.';c.active='linkedin';
+stamp(c,c.drafts.linkedin).text='A supported post.';
+assert.throws(()=>socialDraft(c),/Review/);
+c.drafts.linkedin.reviewed=true;
+assert.equal(socialDraft(c).url,'https://www.linkedin.com/feed/');
+assert.equal(socialDraft(c).text,'A supported post.');
+c.active='thread';stamp(c,c.drafts.thread).text='1/2 First post.\n\n2/2 Second post.';c.drafts.thread.reviewed=true;
+assert.equal(socialDraft(c,1).text,'2/2 Second post.');
+assert.equal(socialDraft(c,1).count,2);
+assert.throws(()=>socialDraft(c,2),/existing/);
+setSource(c,'Changed source with different claims.');
+assert.throws(()=>socialDraft(c),/Regenerate/);
+console.log('PASS: sharing requires review/current source and selects individual X posts.');

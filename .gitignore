@@ -1,0 +1,19 @@
+# Local credentials and configuration
+.env
+.env.*
+!.env.example
+google-client-id.txt
+*.pem
+*.key
+# User workspaces and runtime data
+data/
+*.sqlite*
+*.db
+*.log
+# Local dependencies and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+Relay-Designed-Example.pptx
