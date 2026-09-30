@@ -98,3 +98,14 @@ additional hosted tests verify persistent session behavior with mocked cloud
 storage, secure cookies, sign-out, origin/host boundaries, sanitized database
 errors and quota denial without a Gemini call. Live REST credentials and public
 Google sign-in remain pending Render environment setup.
+
+
+2026-09-30 UI update: format previews preserve draft text, import remaps version
+identities, and New/Explore sample clears campaign search. Preview regions are
+keyboard-scrollable. Native decorative motion has a persisted off switch and
+honors reduced motion; the Node harness also checks unavailable localStorage.
+All 22 Python checks and four Node scripts pass. Chrome verifies preview/edit
+text equality, motion-off surviving reload, New after filtering, keyboard preview
+scrolling, and no page overflow at 320, 355, 853, 1138 and 1600 CSS pixels.
+Render's previous deployment is confirmed Live; public Google sign-in was
+confirmed working by the user. No real generation was used for this UI validation.

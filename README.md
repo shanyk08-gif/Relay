@@ -1,8 +1,14 @@
-> **Hosting:** Render + Supabase support is implemented. Follow [DEPLOY.md](DEPLOY.md). Live cloud verification is still pending; local startup remains unchanged.
+> **Hosting:** Render + Supabase support is implemented. Follow [DEPLOY.md](DEPLOY.md). The hosted app is at https://relay-2r7z.onrender.com. Local startup remains unchanged.
 
-# Relay — SIH26154 local AI workspace
+# Relay — SIH26154 content workspace
 
-A local content transformation workspace for **Gen AI Platform for Automated Content Transformation**, NTRO. Built alongside NAWI Lab in a separate folder. The Python server has no external dependencies. AI requires Ollama and the local qwen3:1.7b model; no API key or paid API is used.
+A content transformation workspace for **Gen AI Platform for Automated Content Transformation**, NTRO. The hosted version uses Google sign-in, Supabase storage and Gemini; desktop mode can use Gemini or Ollama. Install the Python dependencies from `requirements.txt`. Historical local-only notes below apply to the desktop configuration; see [DEPLOY.md](DEPLOY.md) for hosting.
+
+## Interface
+
+The workspace includes format previews, an Edit text switch, campaign search and grouped AI versions. Previews retain draft content; they are illustrative layouts, not exact export replicas. Floating source-to-format artwork and pointer tilt use native CSS/JavaScript. The Motion button remembers your preference and follows system reduced-motion settings. No extra UI library or paid service is required.
+
+UI checks: `node test_preview.mjs` and `node test_motion.mjs`.
 
 ## Run
 

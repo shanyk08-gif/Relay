@@ -23,7 +23,7 @@ if HOSTED and not PUBLIC_ORIGIN and os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
     PUBLIC_ORIGIN='https://'+os.environ['RENDER_EXTERNAL_HOSTNAME']
 SECURE_COOKIE = '; Secure' if HOSTED else ''
 
-FILES = {'/login': ('login.html','text/html'), '/login.js': ('login.js','text/javascript'), '/': ('index.html','text/html'), '/style.css': ('style.css','text/css'), '/app.js': ('app.js','text/javascript'), '/model.mjs': ('model.mjs','text/javascript')}
+FILES = {'/motion.js': ('motion.js','text/javascript'), '/preview.mjs': ('preview.mjs','text/javascript'), '/login': ('login.html','text/html'), '/login.js': ('login.js','text/javascript'), '/': ('index.html','text/html'), '/style.css': ('style.css','text/css'), '/app.js': ('app.js','text/javascript'), '/model.mjs': ('model.mjs','text/javascript')}
 
 def payload(data):
     if not isinstance(data, dict):
@@ -133,7 +133,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.reply(200,{'enabled':True,'client_id':accounts.CLIENT_ID,'nonce':nonce},headers=[('Set-Cookie',f'relay_login={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=600{SECURE_COOKIE}')])
         owner=accounts.user(self.headers) if accounts.CLIENT_ID else None
         if path=='/api/session':return self.reply(200,{'hosted':HOSTED,'enabled':bool(accounts.CLIENT_ID),'authenticated':bool(owner),'profile':accounts.profile(self.headers) if owner else {},'workspace_session':accounts.hashlib.sha256(accounts.cookie(self.headers,'relay_session').encode()).hexdigest() if owner else ''})
-        if accounts.CLIENT_ID and not owner and path not in ('/login','/login.js','/style.css'):
+        if accounts.CLIENT_ID and not owner and path not in ('/login','/login.js','/motion.js','/style.css'):
             if path=='/':return self.reply(302,b'',mime='text/html',headers=[('Location','/login')])
             return self.reply(401,{'error':'Sign in to continue.'})
         if path=='/api/workspace':
