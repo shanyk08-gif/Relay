@@ -90,3 +90,11 @@ Profile name/email/photo derive only from verified Google ID token claims; photo
 hosts restricted to HTTPS Googleusercontent subdomains. Four account checks pass.
 Profile fields are kept in the expiring in-memory session, not the database.
 A server restart and fresh Google login are required to populate profile photos.
+
+
+Hosted mode: Supabase schema applied successfully on 2026-09-30. Production
+transport uses Waitress; cloud storage uses the server-only REST API. Three
+additional hosted tests verify persistent session behavior with mocked cloud
+storage, secure cookies, sign-out, origin/host boundaries, sanitized database
+errors and quota denial without a Gemini call. Live REST credentials and public
+Google sign-in remain pending Render environment setup.

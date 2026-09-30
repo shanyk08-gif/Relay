@@ -1,4 +1,4 @@
-> **Deployment status:** This repository contains the working local Relay app. Public hosting is not configured yet. Supabase storage, persistent sessions, public HTTPS configuration and shared AI usage limits must be implemented before deploying on Render.
+> **Hosting:** Render + Supabase support is implemented. Follow [DEPLOY.md](DEPLOY.md). Live cloud verification is still pending; local startup remains unchanged.
 
 # Relay — SIH26154 local AI workspace
 

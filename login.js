@@ -4,6 +4,7 @@
   const sessionResponse=await fetch('/api/session');
   if(!sessionResponse.ok)throw Error('Relay login status is unavailable. Reload to retry.');
   const session=await sessionResponse.json();
+  if(session.hosted){document.querySelector('.login-reassurance p').textContent='Your workspace, wherever you sign in. Campaigns are saved securely to your Relay account.';document.querySelector('.login-privacy').textContent='Relay uses your Google profile for sign-in. Campaigns are stored with Supabase. Generating AI drafts sends your source to Google. No Gmail, Drive or contacts access is requested.';}
   if(session.authenticated){location.replace('/');return;}
   const response=await fetch('/api/login/config');const config=await response.json();
   if(!response.ok)throw Error(config.error||'Login is unavailable.');

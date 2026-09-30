@@ -1,5 +1,6 @@
 """Loopback-only Relay server. Google sign-in uses google-auth."""
 import json
+from urllib.parse import urlsplit
 import accounts
 from powerpoint import make_powerpoint
 from presenton import export_deck
@@ -16,6 +17,12 @@ PROVIDER = os.environ.get('RELAY_PROVIDER', 'ollama')
 MODEL = 'gemini-3.1-flash-lite' if PROVIDER == 'gemini' else 'qwen3:1.7b'
 FORMATS = {'summary': 'Executive summary with key facts and next steps', 'advisory': 'Structured advisory: context, audience, actions and limitations', 'linkedin': 'Return only publishable LinkedIn post text. No production notes, visual recommendations, editorial commentary or Call to Action section. Omit a call to action unless the supplied objective explicitly requests one and the source supports the action. Use neutral third-person reporting unless a publisher and its position are explicitly supplied.', 'thread': 'Numbered X posts, each under 280 characters, separated by blank lines', 'slides': 'Presentation formatted as Slide 1: Title, followed by content lines and Speaker notes: text; repeat for each numbered slide. Keep titles under 80 characters. Write concise slide content with 2–4 short points; move explanations and secondary detail into speaker notes. Use factual labels such as Date: or Location: when supplied. Use a Sequence of events: section only if the source establishes the order.', 'infographic': 'Infographic brief with headline, facts, layout suggestions and source footer', 'video': 'Video package with narration, timed scenes, storyboard and subtitle draft'}
 LOCK = threading.Lock()
+HOSTED = accounts.HOSTED
+PUBLIC_ORIGIN = os.environ.get('PUBLIC_ORIGIN','').rstrip('/')
+if HOSTED and not PUBLIC_ORIGIN and os.environ.get('RENDER_EXTERNAL_HOSTNAME'):
+    PUBLIC_ORIGIN='https://'+os.environ['RENDER_EXTERNAL_HOSTNAME']
+SECURE_COOKIE = '; Secure' if HOSTED else ''
+
 FILES = {'/login': ('login.html','text/html'), '/login.js': ('login.js','text/javascript'), '/': ('index.html','text/html'), '/style.css': ('style.css','text/css'), '/app.js': ('app.js','text/javascript'), '/model.mjs': ('model.mjs','text/javascript')}
 
 def payload(data):
@@ -91,6 +98,8 @@ def gemini(data):
 
 class Handler(BaseHTTPRequestHandler):
     def allowed(self):
+        if HOSTED:
+            return self.headers.get('Host')==urlsplit(PUBLIC_ORIGIN).netloc and self.headers.get('Origin') in (None,PUBLIC_ORIGIN)
         hosts={f'127.0.0.1:{self.server.server_port}',f'localhost:{self.server.server_port}'}
         return self.headers.get('Host') in hosts and self.headers.get('Origin') in {None,*('http://'+h for h in hosts)}
 
@@ -98,6 +107,7 @@ class Handler(BaseHTTPRequestHandler):
         body=json.dumps(value).encode() if mime=='application/json' else value
         self.send_response(status)
         for key,value in (headers or []):self.send_header(key,value)
+        if HOSTED:self.send_header('Strict-Transport-Security','max-age=31536000')
         self.send_header('Referrer-Policy','no-referrer-when-downgrade')
         self.send_header('Cross-Origin-Opener-Policy','same-origin-allow-popups')
         self.send_header('Content-Type',mime+'; charset=utf-8')
@@ -115,20 +125,21 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         if not self.allowed():return self.reply(403,{'error':'Local requests only.'})
         path=self.path.split('?')[0]
+        if path=='/healthz':return self.reply(200,{'ok':True})
         if path=='/api/login/config':
             if not accounts.CLIENT_ID:return self.reply(200,{'enabled':False})
             try:token,nonce=accounts.challenge()
             except ValueError as error:return self.reply(429,{'error':str(error)})
-            return self.reply(200,{'enabled':True,'client_id':accounts.CLIENT_ID,'nonce':nonce},headers=[('Set-Cookie',f'relay_login={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=600')])
+            return self.reply(200,{'enabled':True,'client_id':accounts.CLIENT_ID,'nonce':nonce},headers=[('Set-Cookie',f'relay_login={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=600{SECURE_COOKIE}')])
         owner=accounts.user(self.headers) if accounts.CLIENT_ID else None
-        if path=='/api/session':return self.reply(200,{'enabled':bool(accounts.CLIENT_ID),'authenticated':bool(owner),'profile':accounts.profile(self.headers) if owner else {},'workspace_session':accounts.hashlib.sha256(accounts.cookie(self.headers,'relay_session').encode()).hexdigest() if owner else ''})
+        if path=='/api/session':return self.reply(200,{'hosted':HOSTED,'enabled':bool(accounts.CLIENT_ID),'authenticated':bool(owner),'profile':accounts.profile(self.headers) if owner else {},'workspace_session':accounts.hashlib.sha256(accounts.cookie(self.headers,'relay_session').encode()).hexdigest() if owner else ''})
         if accounts.CLIENT_ID and not owner and path not in ('/login','/login.js','/style.css'):
             if path=='/':return self.reply(302,b'',mime='text/html',headers=[('Location','/login')])
             return self.reply(401,{'error':'Sign in to continue.'})
         if path=='/api/workspace':
             if not owner:return self.reply(401,{'error':'Sign in to continue.'})
             try:return self.reply(200,accounts.workspace(owner))
-            except (OSError,accounts.sqlite3.Error):return self.reply(503,{'error':'Local account storage unavailable.'})
+            except (OSError,accounts.sqlite3.Error):return self.reply(503,{'error':'Account storage unavailable. Please retry.'})
         if path=='/api/status':
             if PROVIDER=='gemini':
                 configured=bool(os.environ.get('GEMINI_API_KEY','').strip())
@@ -146,7 +157,7 @@ class Handler(BaseHTTPRequestHandler):
         if not self.allowed():return self.reply(403,{'error':'Local requests only.'})
         if self.path in ('/api/login','/api/logout','/api/workspace'):
             if not accounts.CLIENT_ID:return self.reply(400,{'error':'Google sign-in is not configured.'})
-            if self.headers.get('Origin')!='http://'+self.headers.get('Host',''):return self.reply(403,{'error':'Same-origin request required.'})
+            if self.headers.get('Origin')!=(PUBLIC_ORIGIN if HOSTED else 'http://'+self.headers.get('Host','')):return self.reply(403,{'error':'Same-origin request required.'})
             if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.reply(415,{'error':'JSON required.'})
             try:
                 length=int(self.headers.get('Content-Length','0'))
@@ -155,18 +166,21 @@ class Handler(BaseHTTPRequestHandler):
                 data=json.loads(self.rfile.read(length))
                 if self.path=='/api/login':
                     token=accounts.login(self.headers,data)
-                    return self.reply(200,{'signed_in':True},headers=[('Set-Cookie',f'relay_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800'),('Set-Cookie','relay_login=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')])
+                    return self.reply(200,{'signed_in':True},headers=[('Set-Cookie',f'relay_session={token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800{SECURE_COOKIE}'),('Set-Cookie',f'relay_login=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{SECURE_COOKIE}')])
                 owner=accounts.user(self.headers)
                 if not owner:return self.reply(401,{'error':'Sign in to continue.'})
                 if self.path=='/api/logout':
                     accounts.logout(self.headers)
-                    return self.reply(200,{'signed_out':True},headers=[('Set-Cookie','relay_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0')])
+                    return self.reply(200,{'signed_out':True},headers=[('Set-Cookie',f'relay_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0{SECURE_COOKIE}')])
                 marker=accounts.hashlib.sha256(accounts.cookie(self.headers,'relay_session').encode()).hexdigest()
                 if not accounts.secrets.compare_digest(self.headers.get('X-Workspace-Session',''),marker):return self.reply(409,{'error':'Account session changed. Reload before saving.'})
+                if not isinstance(data,list):raise ValueError('Expected a workspace list.')
                 return self.reply(200,accounts.workspace(owner,data))
             except ValueError as error:return self.reply(400,{'error':str(error)})
-            except (OSError,accounts.sqlite3.Error):return self.reply(503,{'error':'Local account storage unavailable.'})
+            except (OSError,accounts.sqlite3.Error):return self.reply(503,{'error':'Account storage unavailable. Please retry.'})
         if accounts.CLIENT_ID and not accounts.user(self.headers):return self.reply(401,{'error':'Sign in to continue.'})
+        if HOSTED and self.headers.get('Origin')!=PUBLIC_ORIGIN:return self.reply(403,{'error':'Same-origin request required.'})
+        if HOSTED and self.path=='/api/presenton':return self.reply(404,{'error':'Presenton is only available in the local app.'})
         if self.path not in ('/api/generate' ,'/api/powerpoint','/api/presenton'):return self.reply(404,{'error':'Not found.'})
         if self.headers.get('Content-Type','').split(';')[0]!='application/json':return self.reply(415,{'error':'JSON required.'})
         try:
@@ -187,6 +201,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path=='/api/presenton':
                 return self.reply(200,export_deck(data),'application/vnd.openxmlformats-officedocument.presentationml.presentation')
+            if HOSTED:
+                owner=accounts.user(self.headers)
+                if not accounts.cloud.limit('generate-user-'+owner,10,86400) or not accounts.cloud.limit('generate-global',100,86400):
+                    return self.reply(429,{'error':'The demo generation limit has been reached. Please try tomorrow.'})
             result=gemini(data) if PROVIDER=='gemini' else ollama('/api/chat',data,timeout=240)
             text=result.get('message',{}).get('content')
             if not isinstance(text,str) or not text.strip() or len(text)>30000:

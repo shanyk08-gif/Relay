@@ -1,10 +1,10 @@
 import {FORMATS,campaign,sample,wordCount,excerpts,setSource,setDraft,markdown,validCampaign,stale,stamp,socialDraft} from './model.mjs?v=6';
 const $=id=>document.getElementById(id), KEY='relay-studio-v1';
-let campaigns=[], current, storageError='', toastTimer, accountMode=false, workspaceSession='', accountProfile={}, saving=Promise.resolve(), pendingSaves=0, saveFailed=false;
+let campaigns=[], current, storageError='', toastTimer, accountMode=false, hostedMode=false, workspaceSession='', accountProfile={}, saving=Promise.resolve(), pendingSaves=0, saveFailed=false;
 function tell(message){$('toast').textContent=message;$('toast').hidden=false;clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('toast').hidden=true,4500);}
 try{
   const response=await fetch('/api/session');if(!response.ok)throw Error('Login status unavailable.');
-  const session=await response.json();accountMode=session.enabled;workspaceSession=session.workspace_session;accountProfile=session.profile||{};
+  const session=await response.json();accountMode=session.enabled;hostedMode=session.hosted===true;workspaceSession=session.workspace_session;accountProfile=session.profile||{};
   if(accountMode&&!session.authenticated){location.replace('/login');throw Error('Sign in to continue.');}
   let saved;
   if(accountMode){const response=await fetch('/api/workspace');if(!response.ok)throw Error('Account workspace unavailable.');saved=await response.json();}
@@ -21,11 +21,12 @@ function save(){
  saving=saving.then(async()=>{
    try{const response=await fetch('/api/workspace',{method:'POST',headers:{'Content-Type':'application/json','X-Workspace-Session':workspaceSession},body:snapshot});if(!response.ok){const result=await response.json();throw Error(result.error||'Save failed.');}saveFailed=false;}
    catch(error){saveFailed=true;tell(error.message+' Export a backup before leaving.');}
-   finally{pendingSaves--;if(!pendingSaves)$('save-status').textContent=saveFailed?'Not saved · export a backup':'Saved to your account on this Mac';}
+   finally{pendingSaves--;if(!pendingSaves)$('save-status').textContent=saveFailed?'Not saved · export a backup':(hostedMode?'Saved to your account':'Saved to your account on this Mac');}
  });
 }
 window.addEventListener('beforeunload',event=>{if(accountMode&&(pendingSaves||saveFailed)){event.preventDefault();event.returnValue='';}});
 $('account-menu').hidden=!accountMode;
+if(hostedMode){document.querySelector('.account-dropdown p').textContent='Workspace saved to your account';document.querySelector('footer').firstChild.textContent='Saved to your account · Export to keep a backup · ';}
 $('account-name').textContent=accountProfile.name||'Google account';
 $('account-email').textContent=accountProfile.email||'';
 $('avatar-initial').textContent=(accountProfile.name||'G').trim().slice(0,1).toUpperCase();
@@ -41,7 +42,7 @@ $('import-browser').onclick=()=>ask('Import browser campaigns?','Copy campaigns 
  try{const old=JSON.parse(localStorage.getItem(KEY)||'[]');if(!Array.isArray(old)||!old.every(validCampaign))throw Error();if(!old.length)return tell('No campaigns found at this browser address. Your old 127.0.0.1 workspace is separate from localhost.');if(campaigns.length+old.length>200)return tell('Import would exceed 200 campaigns.');campaigns.unshift(...old.map(c=>({...c,id:crypto.randomUUID()})));current=campaigns[0];save();render();tell('Browser campaigns copied to this account.');}catch{tell('Browser campaigns could not be imported. Originals are unchanged.');}
 });
 function renderNav(){$('campaigns').replaceChildren(...campaigns.map(c=>{const b=document.createElement('button');b.textContent=c.title||'Untitled campaign';b.setAttribute('aria-current',String(c.id===current.id));const small=document.createElement('small');small.textContent=c.sample?'CURATED SAMPLE':'MANUAL WORKSPACE';b.append(small);b.onclick=()=>{current=c;render();};return b;}));}
-function renderEvidence(){const chunks=excerpts(current.source);$('excerpts').replaceChildren(...chunks.map((text,i)=>{const q=document.createElement('blockquote'),tag=document.createElement('span');tag.textContent=`S${i+1}`;q.append(tag,document.createTextNode(text));return q;}));if(!chunks.length)$('excerpts').textContent='Add source material to compare it with your drafts.';$('source-count').textContent=`${wordCount(current.source)} words · ${accountMode?'saved on this Mac':'stays in this browser'}`;}
+function renderEvidence(){const chunks=excerpts(current.source);$('excerpts').replaceChildren(...chunks.map((text,i)=>{const q=document.createElement('blockquote'),tag=document.createElement('span');tag.textContent=`S${i+1}`;q.append(tag,document.createTextNode(text));return q;}));if(!chunks.length)$('excerpts').textContent='Add source material to compare it with your drafts.';$('source-count').textContent=`${wordCount(current.source)} words · ${hostedMode?'saved to your account':accountMode?'saved on this Mac':'stays in this browser'}`;}
 function renderSocial(){
   const host=$('social-actions');host.replaceChildren();host.hidden=!['linkedin','thread'].includes(current.active);
   if(host.hidden)return;
@@ -49,7 +50,7 @@ function renderSocial(){
   const d=current.drafts[current.active],posts=current.active==='thread'?excerpts(d.text):[d.text];
   posts.forEach((text,index)=>{const button=document.createElement('button');button.textContent=current.active==='thread'?`Copy post ${index+1} & open X ↗`:'Copy & open LinkedIn ↗';button.disabled=!d.text.trim()||!d.reviewed||stale(current,d);button.onclick=()=>sharePost(index);host.append(button);});
 }
-function renderStats(){renderSocial();const d=current.drafts[current.active];$('reviewed').checked=d.reviewed&&!stale(current,d);$('reviewed').disabled=!d.text.trim()||!current.source.trim()||stale(current,d);$('draft-status').textContent=(stale(current,d)?'Outdated / source unlinked — regenerate':d.reviewed?'Reviewed by you':d.text.trim()?'Needs review':'Empty draft')+(d.model?' · AI: '+d.model:'');let count=`${wordCount(d.text)} words · ${d.text.length} characters`;if(current.active==='thread'){const posts=excerpts(d.text);count+=` · ${posts.filter(p=>Array.from(p).length>280).length} posts over 280 characters (basic count)`;}$('draft-count').textContent=count;$('progress').textContent=`${Object.values(current.drafts).filter(v=>v.reviewed&&!stale(current,v)).length} / 7 reviewed`;$('copy').disabled=$('export').disabled=!d.text.trim()||stale(current,d);$('presenton').hidden=$('powerpoint').hidden=current.active!=='slides';$('presenton').disabled=!d.text.trim()||stale(current,d);$('powerpoint').disabled=!d.text.trim()||stale(current,d);$('bundle').disabled=!Object.values(current.drafts).some(v=>v.text.trim()&&!stale(current,v));}
+function renderStats(){renderSocial();const d=current.drafts[current.active];$('reviewed').checked=d.reviewed&&!stale(current,d);$('reviewed').disabled=!d.text.trim()||!current.source.trim()||stale(current,d);$('draft-status').textContent=(stale(current,d)?'Outdated / source unlinked — regenerate':d.reviewed?'Reviewed by you':d.text.trim()?'Needs review':'Empty draft')+(d.model?' · AI: '+d.model:'');let count=`${wordCount(d.text)} words · ${d.text.length} characters`;if(current.active==='thread'){const posts=excerpts(d.text);count+=` · ${posts.filter(p=>Array.from(p).length>280).length} posts over 280 characters (basic count)`;}$('draft-count').textContent=count;$('progress').textContent=`${Object.values(current.drafts).filter(v=>v.reviewed&&!stale(current,v)).length} / 7 reviewed`;$('copy').disabled=$('export').disabled=!d.text.trim()||stale(current,d);$('presenton').hidden=hostedMode||current.active!=='slides';$('powerpoint').hidden=current.active!=='slides';$('presenton').disabled=!d.text.trim()||stale(current,d);$('powerpoint').disabled=!d.text.trim()||stale(current,d);$('bundle').disabled=!Object.values(current.drafts).some(v=>v.text.trim()&&!stale(current,v));}
 function renderEditor(){for(const b of $('formats').children)b.setAttribute('aria-pressed',String(b.dataset.key===current.active));$('format-title').textContent=FORMATS[current.active][0];$('draft-hint').textContent=FORMATS[current.active][1];$('draft').value=current.drafts[current.active].text;$('draft').readOnly=stale(current,current.drafts[current.active]);$('draft').placeholder='Write a draft or select Generate selected format. AI creates a new campaign version to preserve your current work.';renderStats();}
 function render(){renderNav();for(const k of ['title','source','audience','tone','language','detail','objective'])$(k).value=current[k];$('source-kind').textContent=current.sample?'Curated sample':'Manual workspace';renderEvidence();renderEditor();}
 for(const [key,[name]]of Object.entries(FORMATS)){const b=document.createElement('button');b.textContent=name;b.dataset.key=key;b.onclick=()=>{current.active=key;save();renderEditor();};$('formats').append(b);}
